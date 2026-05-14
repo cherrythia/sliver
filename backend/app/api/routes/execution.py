@@ -1,4 +1,5 @@
 import anthropic
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/workflows", tags=["execution"])
 
 @router.post("/{workflow_id}/execute", response_model=ExecuteResponse)
 def execute_workflow(
-    workflow_id: str,
+    workflow_id: UUID,
     body: ExecuteRequest,
     db: Session = Depends(get_db),
 ):

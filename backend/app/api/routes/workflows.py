@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -24,7 +25,7 @@ def create_workflow(body: WorkflowCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{workflow_id}", response_model=WorkflowRead)
-def get_workflow(workflow_id: str, db: Session = Depends(get_db)):
+def get_workflow(workflow_id: UUID, db: Session = Depends(get_db)):
     wf = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -32,7 +33,7 @@ def get_workflow(workflow_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/{workflow_id}", response_model=WorkflowRead)
-def update_workflow(workflow_id: str, body: WorkflowUpdate, db: Session = Depends(get_db)):
+def update_workflow(workflow_id: UUID, body: WorkflowUpdate, db: Session = Depends(get_db)):
     wf = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")
@@ -45,7 +46,7 @@ def update_workflow(workflow_id: str, body: WorkflowUpdate, db: Session = Depend
 
 
 @router.delete("/{workflow_id}", status_code=204)
-def delete_workflow(workflow_id: str, db: Session = Depends(get_db)):
+def delete_workflow(workflow_id: UUID, db: Session = Depends(get_db)):
     wf = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not wf:
         raise HTTPException(status_code=404, detail="Workflow not found")

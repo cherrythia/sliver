@@ -13,7 +13,7 @@ class DelayCode(Base):
 
 class SubwayDelay(Base):
     __tablename__ = "subway_delays"
-    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True, native_uuid=False), primary_key=True, default=uuid.uuid4)
     date = Column(Date)
     time = Column(Text)
     day = Column(Text)

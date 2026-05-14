@@ -2,11 +2,12 @@ import os
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 TEST_DATABASE_URL = os.getenv(
     "TEST_DATABASE_URL",
-    "postgresql://silver:silver@localhost:5432/silver"
+    "sqlite://"
 )
 
 
@@ -15,7 +16,11 @@ def db_engine():
     from app.db.database import Base
     import app.models.workflow  # noqa: F401
     import app.models.subway    # noqa: F401
-    engine = create_engine(TEST_DATABASE_URL)
+    engine = create_engine(
+        TEST_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(bind=engine)
     yield engine
 
