@@ -172,8 +172,8 @@ sequenceDiagram
 
 ## What Would Change With More Time
 
-- **Streaming execution via SSE** — Push each node's result to the browser as it completes instead of waiting for the full pipeline.
-- **Parallel branches** — Nodes at the same `order` value could run concurrently (e.g. `asyncio.gather`), unlocking fan-out/fan-in patterns.
-- **Execution history persisted to DB** — Store every run with its inputs, outputs, and timestamps so users can compare results over time.
-- **Real text-to-SQL with few-shot examples** — Replace the current parameter-extraction approach with a proper few-shot prompted SQL generator so arbitrary questions can be answered without a fixed query template.
-- **Auth and per-user workflow isolation** — Add JWT-based authentication and row-level security so each user only sees their own workflows.
+- **Parallel branches** — Today the execution engine in `app/core/engine.py` processes every node in strict order, one at a time. If two Tool nodes are independent (neither feeds the other), they could be grouped by an `order` field and executed concurrently with `asyncio.gather`. This would unlock fan-out/fan-in patterns: for example, one branch queries delays by station while another queries by date range, and a downstream Prompt node synthesises both results. The node schema, engine loop, and frontend canvas would all need updates to express and visualise branching.
+
+- **Execution history persisted to DB** — Currently nothing is saved when a workflow runs; results live only in React state until the page is refreshed. Adding an `execution_runs` table (a new Alembic migration and SQLAlchemy model) would record every run: which workflow, what input overrides were applied, each node's output, start/end timestamps, and success or failure. The UI could then expose a history panel showing all past runs side-by-side, making it easy to compare how a workflow's output changes as its nodes are edited over time.
+
+- **Auth and per-user workflow isolation** — Right now all workflows in the database are visible to anyone who can reach the API. Adding JWT-based authentication (e.g. via FastAPI's `OAuth2PasswordBearer`) would gate every endpoint behind a verified identity. Pairing that with CockroachDB's row-level security policies — `CREATE POLICY ... USING (owner_id = current_user_id())` — would enforce at the database layer that each user can only read, update, or delete their own workflows, even if the application layer had a bug.
