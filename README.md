@@ -55,7 +55,7 @@ Workflows are directed pipelines of **nodes** that execute sequentially. Each no
 The pre-loaded **Toronto Subway Analyst** workflow works as follows:
 
 1. An **Input** node accepts a natural-language question (default: *"Which stations have the worst average delay?"*).
-2. A **Tool** node passes the question to `query_subway_db`, which uses Claude Haiku to extract SQL parameters and runs a parameterised query against the historical CSV data loaded into PostgreSQL.
+2. A **Tool** node passes the question to `query_subway_db`, which uses Claude Haiku to extract SQL parameters and runs a parameterised query against the historical CSV data loaded into CockroachDB.
 3. A **Prompt** node sends the raw query results plus the original question to Claude and returns a polished, human-readable answer.
 
 ---
@@ -66,7 +66,7 @@ The pre-loaded **Toronto Subway Analyst** workflow works as follows:
 graph LR
   Browser["Browser :3000\n(React)"]
   API["FastAPI :8000"]
-  DB["PostgreSQL :5432"]
+  DB["CockroachDB :26257"]
   Anthropic["Anthropic API"]
 
   Browser <-->|REST/JSON| API
@@ -78,7 +78,7 @@ graph LR
 |-------|-----------|
 | Frontend | Vite + React + TypeScript, Zustand, React Flow |
 | Backend | FastAPI, SQLAlchemy (sync), Pydantic v2 |
-| Database | PostgreSQL 15 — workflows stored as JSONB |
+| Database | CockroachDB v24.3 — workflows stored as JSON, UUID PKs |
 | AI | Anthropic Claude (Haiku for extraction, Sonnet for summaries) |
 | Infrastructure | Docker Compose |
 
@@ -91,7 +91,7 @@ sequenceDiagram
   participant U as User
   participant FE as React Frontend
   participant BE as FastAPI Backend
-  participant DB as PostgreSQL
+  participant DB as CockroachDB
 
   U->>FE: Clicks "Save"
   FE->>BE: PUT /workflows/:id {name, nodes}
@@ -112,7 +112,7 @@ sequenceDiagram
   participant U as User
   participant FE as React Frontend
   participant BE as FastAPI Backend
-  participant DB as PostgreSQL
+  participant DB as CockroachDB
   participant T as Tool (query_subway_db)
   participant AI as Anthropic API
 
@@ -146,7 +146,11 @@ sequenceDiagram
 
 ## Design Decisions
 
-**JSONB for nodes** — Nodes are always read and written as a complete unit (the whole workflow graph). There is no query pattern that needs individual node rows, so a normalised `nodes` table would add complexity with no benefit. JSONB lets the schema evolve freely without migrations.
+**JSON for nodes** — Nodes are always read and written as a complete unit (the whole workflow graph). There is no query pattern that needs individual node rows, so a normalised `nodes` table would add complexity with no benefit. JSON lets the schema evolve freely without migrations.
+
+**CockroachDB over PostgreSQL** — CockroachDB provides distributed SQL with automatic sharding and replication, making the data layer resilient and horizontally scalable. It speaks the PostgreSQL wire protocol so psycopg2, SQLAlchemy, and Adminer work without modification. UUID primary keys on `subway_delays` distribute writes evenly across ranges; sequential integers would create hotspots in a distributed system.
+
+**Adminer for DB access** — A single ~25 MB PHP container replaces heavier tools. Connect via the PostgreSQL driver at `db:26257` since CockroachDB is wire-compatible.
 
 **Sequential execution engine** — A simple ordered loop is easy to reason about, test, and debug. Parallelism is not needed for the current use-case and would complicate context passing and error attribution.
 

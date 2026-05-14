@@ -1,6 +1,6 @@
 # Backend
 
-Stack: FastAPI + SQLAlchemy 2.0 + Pydantic v2 + Alembic + PostgreSQL 15.
+Stack: FastAPI + SQLAlchemy 2.0 + Pydantic v2 + Alembic + CockroachDB.
 
 ## File map
 
@@ -21,6 +21,7 @@ backend/
 │   │   └── workflow.py          # Pydantic request/response schemas
 │   └── db/
 │       ├── database.py          # Engine, SessionLocal, get_db()
+│       ├── create_db.py         # Creates CockroachDB database if not exists (runs before Alembic)
 │       └── seed.py              # CSV loader + default workflow seeder
 ├── tests/
 │   ├── conftest.py              # Per-test DB rollback, TestClient fixture
@@ -118,6 +119,10 @@ Used via `Depends(get_db)` in route handlers. Tests override it with a per-test 
 
 ---
 
+## Database creation (`db/create_db.py`)
+
+Runs before Alembic on every startup. CockroachDB does not auto-create databases (unlike PostgreSQL), so this script connects to `defaultdb` and runs `CREATE DATABASE IF NOT EXISTS silver`. No-ops if the database already exists, and skips entirely for non-CockroachDB URLs.
+
 ## Seed script (`db/seed.py`)
 
 Runs once at startup (idempotent — checks if data already exists).
@@ -136,4 +141,4 @@ source .venv/bin/activate
 pytest tests/ -v
 ```
 
-Tests use SQLite in-memory (no Postgres needed). Each test gets a clean transaction rolled back at the end.
+Tests use SQLite in-memory (no CockroachDB needed). Each test gets a clean transaction rolled back at the end.
