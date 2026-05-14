@@ -15,17 +15,18 @@ Ships with a pre-loaded **Toronto Subway Analyst** workflow that queries a histo
 
 ### Steps
 
-1. **Enter the repo**
+1. **Clone the repo**
 
    ```bash
-   cd silver
+   git clone git@github.com:cherrythia/sliver.git
+   cd sliver
    ```
 
 2. **Configure your API key**
 
    ```bash
    cp .env.example .env
-   # Open .env and replace the placeholder with your real key
+   # Open .env and replace the placeholder with your real Anthropic API key
    ```
 
 3. **Start everything**
@@ -34,11 +35,18 @@ Ships with a pre-loaded **Toronto Subway Analyst** workflow that queries a histo
    docker compose up --build
    ```
 
-   On first run the backend seeds the database with the sample Toronto Subway workflow. Subsequent runs skip seeding.
+   On first run the backend seeds the database with the Toronto Subway dataset and workflow (~30 seconds). Subsequent runs skip seeding.
 
-4. **Open the app**
+4. **Open the services**
 
-   Navigate to [http://localhost:3000](http://localhost:3000).
+   | Service | URL |
+   |---|---|
+   | App (React) | http://localhost:3000 |
+   | API | http://localhost:8000 |
+   | CockroachDB Console | http://localhost:8080 |
+   | Adminer (DB browser) | http://localhost:8081 |
+
+   For Adminer, log in with: System = **PostgreSQL**, Server = `db:26257`, Username = `root`, Password = *(blank)*.
 
 ---
 
@@ -76,10 +84,10 @@ graph LR
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Vite + React + TypeScript, Zustand, React Flow |
+| Frontend | Vite + React + TypeScript, Zustand, dnd-kit |
 | Backend | FastAPI, SQLAlchemy (sync), Pydantic v2 |
 | Database | CockroachDB v24.3 — workflows stored as JSON, UUID PKs |
-| AI | Anthropic Claude (Haiku for extraction, Sonnet for summaries) |
+| AI | Anthropic Claude Haiku (query param extraction + prompt responses) |
 | Infrastructure | Docker Compose |
 
 ---
