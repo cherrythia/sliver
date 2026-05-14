@@ -2,7 +2,8 @@ import os
 import uuid
 from datetime import datetime
 import pandas as pd
-from app.db.database import SessionLocal
+from sqlalchemy import create_engine, text
+from app.db.database import DATABASE_URL, SessionLocal
 from app.models.subway import SubwayDelay, DelayCode
 from app.models.workflow import Workflow
 
@@ -46,7 +47,20 @@ TORONTO_NODES = [
 ]
 
 
+def _ensure_database():
+    # CockroachDB does not auto-create databases. Connect to defaultdb first
+    # and create the target database if it doesn't already exist.
+    if "cockroachdb" not in DATABASE_URL:
+        return
+    root_url = DATABASE_URL.replace("/silver", "/defaultdb")
+    engine = create_engine(root_url, isolation_level="AUTOCOMMIT")
+    with engine.connect() as conn:
+        conn.execute(text("CREATE DATABASE IF NOT EXISTS silver"))
+    engine.dispose()
+
+
 def seed():
+    _ensure_database()
     db = SessionLocal()
     try:
         _seed_subway_data(db)

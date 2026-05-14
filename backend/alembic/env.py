@@ -67,7 +67,7 @@ def run_migrations_online() -> None:
     """
     config.set_main_option(
         "sqlalchemy.url",
-        os.getenv("DATABASE_URL", "postgresql://silver:silver@localhost:5432/silver")
+        os.getenv("DATABASE_URL", "cockroachdb+psycopg2://root@localhost:26257/silver?sslmode=disable")
     )
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),

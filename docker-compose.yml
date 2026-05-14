@@ -1,24 +1,22 @@
 services:
   db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: silver
-      POSTGRES_USER: silver
-      POSTGRES_PASSWORD: silver
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+    image: cockroachdb/cockroach:v24.3.0
+    command: start-single-node --insecure
     ports:
-      - "5432:5432"
+      - "26257:26257"   # SQL (psycopg2 connects here)
+      - "8080:8080"     # DB Console — open http://localhost:8080 in browser
+    volumes:
+      - cockroach-data:/cockroach/cockroach-data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U silver -d silver"]
+      test: ["CMD", "cockroach", "sql", "--insecure", "--execute=SELECT 1"]
       interval: 5s
-      timeout: 5s
-      retries: 10
+      timeout: 10s
+      retries: 15
 
   backend:
     build: ./backend
     environment:
-      DATABASE_URL: postgresql://silver:silver@db:5432/silver
+      DATABASE_URL: cockroachdb+psycopg2://root@db:26257/silver?sslmode=disable
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       DATA_DIR: /app/data
     volumes:
@@ -39,4 +37,4 @@ services:
       - backend
 
 volumes:
-  pgdata:
+  cockroach-data:

@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://silver:silver@localhost:5432/silver"
+    "cockroachdb+psycopg2://root@localhost:26257/silver?sslmode=disable"
 )
 
 engine = create_engine(DATABASE_URL)
