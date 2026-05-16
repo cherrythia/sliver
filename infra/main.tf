@@ -19,7 +19,7 @@ terraform {
   # backend "s3" {
   #   bucket         = "silver-terraform-state"
   #   key            = "silver/terraform.tfstate"
-  #   region         = "us-east-1"
+  #   region         = "ap-southeast-1"
   #   dynamodb_table = "silver-terraform-locks"
   # }
 }
