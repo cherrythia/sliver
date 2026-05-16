@@ -111,11 +111,12 @@ jobs:
         run: kubectl apply -f k8s/04-ingress.yaml
 
       # ── Wait for rollouts ────────────────────────────────────────────────
+      # Timeout is 600s: first deploy seeds ~144k rows before uvicorn starts
       - name: Wait for backend rollout
-        run: kubectl rollout status deployment/backend -n silver --timeout=300s
+        run: kubectl rollout status deployment/backend -n silver --timeout=600s
 
       - name: Wait for frontend rollout
-        run: kubectl rollout status deployment/frontend -n silver --timeout=300s
+        run: kubectl rollout status deployment/frontend -n silver --timeout=600s
 
       # ── Discover ALB DNS and persist it for future builds ────────────────
       - name: Store ALB DNS in SSM and update CORS
