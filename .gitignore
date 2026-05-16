@@ -12,8 +12,9 @@ dist/
 .vite/
 
 # Env
-.env
-.env.local
 
 # Project
 .superpowers/
+terraform.tfvars
+infra/.terraform/
+infra/terraform.tfstate*

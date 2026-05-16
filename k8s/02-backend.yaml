@@ -1,0 +1,62 @@
+---
+# ${ECR_BACKEND} and ${IMAGE_TAG} are substituted by the deploy workflow
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: silver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: ${ECR_BACKEND}:${IMAGE_TAG}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              value: "cockroachdb+psycopg2://root@cockroachdb:26257/silver?sslmode=disable"
+            - name: DATA_DIR
+              value: "/app/data"
+            - name: ALLOWED_ORIGINS
+              value: "http://localhost:3000"  # Updated by deploy workflow after ALB is provisioned
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: silver-secrets
+                  key: ANTHROPIC_API_KEY
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: silver
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP

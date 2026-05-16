@@ -1,0 +1,9 @@
+aws_region         = "us-east-1"
+cluster_name       = "silver"
+node_instance_type = "t3.medium"
+node_desired_size  = 2
+node_min_size      = 1
+node_max_size      = 4
+
+# Stored in SSM SecureString — never committed
+anthropic_api_key = "sk-ant-..."

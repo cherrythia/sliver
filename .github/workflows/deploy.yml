@@ -1,0 +1,132 @@
+name: Deploy to EKS
+
+on:
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION:   ${{ secrets.AWS_REGION }}
+  CLUSTER_NAME: silver
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ── Fetch infra config from SSM ──────────────────────────────────────
+
+      - name: Read config from SSM
+        id: ssm
+        run: |
+          ECR_BACKEND=$(aws ssm get-parameter --name /silver/ECR_BACKEND --query "Parameter.Value" --output text)
+          ECR_FRONTEND=$(aws ssm get-parameter --name /silver/ECR_FRONTEND --query "Parameter.Value" --output text)
+          EFS_ID=$(aws ssm get-parameter --name /silver/EFS_ID --query "Parameter.Value" --output text)
+          echo "ecr_backend=$ECR_BACKEND"   >> "$GITHUB_OUTPUT"
+          echo "ecr_frontend=$ECR_FRONTEND" >> "$GITHUB_OUTPUT"
+          echo "efs_id=$EFS_ID"             >> "$GITHUB_OUTPUT"
+
+      # ── Build & push images ──────────────────────────────────────────────
+
+      - name: Build and push backend
+        env:
+          ECR_BACKEND: ${{ steps.ssm.outputs.ecr_backend }}
+        run: |
+          docker build \
+            -f backend/Dockerfile.prod \
+            -t $ECR_BACKEND:${{ github.sha }} \
+            -t $ECR_BACKEND:latest \
+            ./backend
+          docker push $ECR_BACKEND --all-tags
+
+      - name: Build and push frontend
+        env:
+          ECR_FRONTEND: ${{ steps.ssm.outputs.ecr_frontend }}
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: |
+          docker build \
+            -f frontend/Dockerfile.prod \
+            --build-arg VITE_API_URL=$VITE_API_URL \
+            -t $ECR_FRONTEND:${{ github.sha }} \
+            -t $ECR_FRONTEND:latest \
+            ./frontend
+          docker push $ECR_FRONTEND --all-tags
+
+      # ── Configure kubectl ────────────────────────────────────────────────
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
+
+      # ── Apply Kubernetes resources ───────────────────────────────────────
+
+      - name: Ensure namespace exists
+        run: kubectl create namespace silver --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Create/update Anthropic API key secret
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          kubectl create secret generic silver-secrets \
+            --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+            --namespace silver \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply DB resources (PV needs EFS ID substituted)
+        env:
+          EFS_FILE_SYSTEM_ID: ${{ steps.ssm.outputs.efs_id }}
+        run: |
+          envsubst < k8s/01-db.yaml | kubectl apply -f -
+
+      - name: Apply backend and frontend manifests
+        env:
+          ECR_BACKEND:  ${{ steps.ssm.outputs.ecr_backend }}
+          ECR_FRONTEND: ${{ steps.ssm.outputs.ecr_frontend }}
+          IMAGE_TAG:    ${{ github.sha }}
+        run: |
+          envsubst < k8s/02-backend.yaml  | kubectl apply -f -
+          envsubst < k8s/03-frontend.yaml | kubectl apply -f -
+
+      - name: Apply ingress
+        run: kubectl apply -f k8s/04-ingress.yaml
+
+      # ── Wait for rollouts ────────────────────────────────────────────────
+
+      - name: Wait for backend rollout
+        run: kubectl rollout status deployment/backend -n silver --timeout=300s
+
+      - name: Wait for frontend rollout
+        run: kubectl rollout status deployment/frontend -n silver --timeout=300s
+
+      # ── Auto-update CORS once ALB is provisioned ─────────────────────────
+
+      - name: Update backend ALLOWED_ORIGINS with ALB URL
+        run: |
+          echo "Waiting for ALB to be assigned..."
+          for i in $(seq 1 30); do
+            ALB_HOST=$(kubectl get ingress silver-ingress -n silver \
+              -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "")
+            [ -n "$ALB_HOST" ] && break
+            sleep 10
+          done
+
+          if [ -n "$ALB_HOST" ]; then
+            kubectl set env deployment/backend \
+              ALLOWED_ORIGINS="http://$ALB_HOST" \
+              -n silver
+          else
+            echo "ALB not yet assigned — CORS origins not updated (will retry on next deploy)"
+          fi

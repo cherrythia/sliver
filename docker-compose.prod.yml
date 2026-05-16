@@ -1,0 +1,41 @@
+services:
+  db:
+    image: cockroachdb/cockroach:v24.3.0
+    command: start-single-node --insecure
+    ports:
+      - "26257:26257"
+    volumes:
+      - cockroach-data:/cockroach/cockroach-data
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "--execute=SELECT 1"]
+      interval: 5s
+      timeout: 10s
+      retries: 15
+    restart: unless-stopped
+
+  backend:
+    image: ${ECR_REGISTRY}/${ECR_BACKEND_REPO}:latest
+    environment:
+      DATABASE_URL: cockroachdb+psycopg2://root@db:26257/silver?sslmode=disable
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DATA_DIR: /app/data
+    volumes:
+      - app-data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    image: ${ECR_REGISTRY}/${ECR_FRONTEND_REPO}:latest
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  cockroach-data:
+  app-data:
