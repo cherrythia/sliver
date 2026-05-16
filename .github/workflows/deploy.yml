@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION:   ap-southeast-1
+  AWS_REGION:   us-east-1
   AWS_ROLE_ARN: arn:aws:iam::196511141455:role/silver-github-actions
   CLUSTER_NAME: silver
 
