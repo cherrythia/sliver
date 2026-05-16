@@ -4,8 +4,13 @@ on:
   push:
     branches: [main]
 
+permissions:
+  id-token: write   # Required for OIDC token issuance
+  contents: read
+
 env:
-  AWS_REGION:   ${{ secrets.AWS_REGION }}
+  AWS_REGION:   us-east-1
+  AWS_ROLE_ARN: arn:aws:iam::196511141455:role/silver-github-actions
   CLUSTER_NAME: silver
 
 jobs:
@@ -16,31 +21,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      # ── Auth via OIDC — no stored AWS secrets needed ─────────────────────
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region:            ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region:     ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       # ── Fetch infra config from SSM ──────────────────────────────────────
-
       - name: Read config from SSM
         id: ssm
         run: |
           ECR_BACKEND=$(aws ssm get-parameter --name /silver/ECR_BACKEND --query "Parameter.Value" --output text)
           ECR_FRONTEND=$(aws ssm get-parameter --name /silver/ECR_FRONTEND --query "Parameter.Value" --output text)
           EFS_ID=$(aws ssm get-parameter --name /silver/EFS_ID --query "Parameter.Value" --output text)
-          echo "ecr_backend=$ECR_BACKEND"   >> "$GITHUB_OUTPUT"
-          echo "ecr_frontend=$ECR_FRONTEND" >> "$GITHUB_OUTPUT"
-          echo "efs_id=$EFS_ID"             >> "$GITHUB_OUTPUT"
+          ANTHROPIC_KEY=$(aws ssm get-parameter --name /silver/ANTHROPIC_API_KEY --with-decryption --query "Parameter.Value" --output text)
+          # ALB DNS is stored after first deploy; empty on first run (frontend falls back to build ARG default)
+          ALB_DNS=$(aws ssm get-parameter --name /silver/ALB_DNS --query "Parameter.Value" --output text 2>/dev/null || echo "")
+          echo "ecr_backend=$ECR_BACKEND"     >> "$GITHUB_OUTPUT"
+          echo "ecr_frontend=$ECR_FRONTEND"   >> "$GITHUB_OUTPUT"
+          echo "efs_id=$EFS_ID"               >> "$GITHUB_OUTPUT"
+          echo "alb_dns=$ALB_DNS"             >> "$GITHUB_OUTPUT"
+          # Mask the key so it never appears in logs
+          echo "::add-mask::$ANTHROPIC_KEY"
+          echo "anthropic_key=$ANTHROPIC_KEY" >> "$GITHUB_OUTPUT"
 
       # ── Build & push images ──────────────────────────────────────────────
-
       - name: Build and push backend
         env:
           ECR_BACKEND: ${{ steps.ssm.outputs.ecr_backend }}
@@ -55,41 +65,38 @@ jobs:
       - name: Build and push frontend
         env:
           ECR_FRONTEND: ${{ steps.ssm.outputs.ecr_frontend }}
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          # Use stored ALB DNS if available, otherwise empty (nginx serves static files; API calls use relative URLs)
+          VITE_API_URL: ${{ steps.ssm.outputs.alb_dns != '' && format('http://{0}:8000', steps.ssm.outputs.alb_dns) || 'http://localhost:8000' }}
         run: |
           docker build \
             -f frontend/Dockerfile.prod \
-            --build-arg VITE_API_URL=$VITE_API_URL \
+            --build-arg VITE_API_URL="$VITE_API_URL" \
             -t $ECR_FRONTEND:${{ github.sha }} \
             -t $ECR_FRONTEND:latest \
             ./frontend
           docker push $ECR_FRONTEND --all-tags
 
       # ── Configure kubectl ────────────────────────────────────────────────
-
       - name: Update kubeconfig
-        run: |
-          aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
+        run: aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
 
       # ── Apply Kubernetes resources ───────────────────────────────────────
-
       - name: Ensure namespace exists
         run: kubectl create namespace silver --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Create/update Anthropic API key secret
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_KEY: ${{ steps.ssm.outputs.anthropic_key }}
         run: |
           kubectl create secret generic silver-secrets \
-            --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+            --from-literal=ANTHROPIC_API_KEY="$ANTHROPIC_KEY" \
             --namespace silver \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Apply DB resources (PV needs EFS ID substituted)
+      - name: Apply DB resources
         env:
           EFS_FILE_SYSTEM_ID: ${{ steps.ssm.outputs.efs_id }}
-        run: |
-          envsubst < k8s/01-db.yaml | kubectl apply -f -
+        run: envsubst < k8s/01-db.yaml | kubectl apply -f -
 
       - name: Apply backend and frontend manifests
         env:
@@ -104,16 +111,14 @@ jobs:
         run: kubectl apply -f k8s/04-ingress.yaml
 
       # ── Wait for rollouts ────────────────────────────────────────────────
-
       - name: Wait for backend rollout
         run: kubectl rollout status deployment/backend -n silver --timeout=300s
 
       - name: Wait for frontend rollout
         run: kubectl rollout status deployment/frontend -n silver --timeout=300s
 
-      # ── Auto-update CORS once ALB is provisioned ─────────────────────────
-
-      - name: Update backend ALLOWED_ORIGINS with ALB URL
+      # ── Discover ALB DNS and persist it for future builds ────────────────
+      - name: Store ALB DNS in SSM and update CORS
         run: |
           echo "Waiting for ALB to be assigned..."
           for i in $(seq 1 30); do
@@ -124,9 +129,18 @@ jobs:
           done
 
           if [ -n "$ALB_HOST" ]; then
+            # Persist so next build uses the correct VITE_API_URL
+            aws ssm put-parameter \
+              --name /silver/ALB_DNS \
+              --value "$ALB_HOST" \
+              --type String \
+              --overwrite
+
+            # Update backend CORS to allow requests from the frontend origin
             kubectl set env deployment/backend \
               ALLOWED_ORIGINS="http://$ALB_HOST" \
               -n silver
+            echo "ALB DNS: $ALB_HOST"
           else
-            echo "ALB not yet assigned — CORS origins not updated (will retry on next deploy)"
+            echo "ALB not yet assigned — will be set on next deploy"
           fi

@@ -110,19 +110,41 @@ resource "aws_iam_role_policy_attachment" "efs_csi" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEFSCSIDriverPolicy"
 }
 
-## ── GitHub Actions IAM user ─────────────────────────────────────────────────
+## ── GitHub Actions OIDC (no stored secrets required) ────────────────────────
 
-resource "aws_iam_user" "github_actions" {
+resource "aws_iam_openid_connect_provider" "github_actions" {
+  url             = "https://token.actions.githubusercontent.com"
+  client_id_list  = ["sts.amazonaws.com"]
+  # GitHub's OIDC thumbprint (stable — see https://github.blog/changelog/2022-01-13-github-actions-update-on-oidc-based-deployments)
+  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
+}
+
+resource "aws_iam_role" "github_actions" {
   name = "${var.cluster_name}-github-actions"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = "sts:AssumeRoleWithWebIdentity"
+      Principal = {
+        Federated = aws_iam_openid_connect_provider.github_actions.arn
+      }
+      Condition = {
+        StringEquals = {
+          "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
+        }
+        StringLike = {
+          # Scope to this repo on any branch/tag
+          "token.actions.githubusercontent.com:sub" = "repo:cherrythia/sliver:*"
+        }
+      }
+    }]
+  })
 }
 
-resource "aws_iam_access_key" "github_actions" {
-  user = aws_iam_user.github_actions.name
-}
-
-resource "aws_iam_user_policy" "github_actions" {
-  name = "${var.cluster_name}-deploy"
-  user = aws_iam_user.github_actions.name
+resource "aws_iam_role_policy" "github_actions" {
+  name = "deploy"
+  role = aws_iam_role.github_actions.id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -146,26 +168,25 @@ resource "aws_iam_user_policy" "github_actions" {
         Resource = aws_eks_cluster.main.arn
       },
       {
-        Effect   = "Allow"
-        Action   = ["ssm:GetParameter"]
+        Effect = "Allow"
+        Action = ["ssm:GetParameter", "ssm:PutParameter"]
         Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/silver/*"
       }
     ]
   })
 }
 
-# Grant the GitHub Actions user cluster-admin access so it can manage
-# cluster-scoped resources (Namespace, PersistentVolume, StorageClass)
-# in addition to namespace-scoped ones (Deployments, Services, Ingress, Secrets).
+# Grant the GitHub Actions OIDC role cluster-admin so it can manage
+# cluster-scoped resources (Namespace, PersistentVolume, StorageClass).
 resource "aws_eks_access_entry" "github_actions" {
   cluster_name  = aws_eks_cluster.main.name
-  principal_arn = aws_iam_user.github_actions.arn
+  principal_arn = aws_iam_role.github_actions.arn
   type          = "STANDARD"
 }
 
 resource "aws_eks_access_policy_association" "github_actions" {
   cluster_name  = aws_eks_cluster.main.name
-  principal_arn = aws_iam_user.github_actions.arn
+  principal_arn = aws_iam_role.github_actions.arn
   policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
 
   access_scope {

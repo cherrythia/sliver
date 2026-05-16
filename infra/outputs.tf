@@ -19,15 +19,9 @@ output "efs_file_system_id" {
   value       = aws_efs_file_system.cockroach.id
 }
 
-output "github_actions_access_key_id" {
-  description = "Add as AWS_ACCESS_KEY_ID in GitHub secrets"
-  value       = aws_iam_access_key.github_actions.id
-}
-
-output "github_actions_secret_access_key" {
-  description = "Add as AWS_SECRET_ACCESS_KEY in GitHub secrets"
-  value       = aws_iam_access_key.github_actions.secret
-  sensitive   = true
+output "github_actions_role_arn" {
+  description = "OIDC role assumed by GitHub Actions — hardcoded in deploy.yml, no secrets needed"
+  value       = aws_iam_role.github_actions.arn
 }
 
 output "alb_controller_role_arn" {

@@ -23,6 +23,11 @@ resource "aws_eks_cluster" "main" {
     endpoint_private_access = false
   }
 
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
+  }
+
   enabled_cluster_log_types = ["api", "audit"]
 
   depends_on = [
