@@ -50,7 +50,7 @@ resource "aws_iam_role_policy_attachment" "eks_nodes_ecr" {
 
 # Fetch the official LBC IAM policy from the upstream release
 data "http" "alb_controller_policy" {
-  url = "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.2/docs/install/iam_policy.json"
+  url = "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v3.3.0/docs/install/iam_policy.json"
 }
 
 resource "aws_iam_policy" "alb_controller" {
