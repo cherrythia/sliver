@@ -27,8 +27,7 @@ Option A — Destroy then re-apply. Infrastructure already complete. Only code c
 - Remove the `anthropic_api_key` line entirely. The key is passed via `TF_VAR_anthropic_api_key` environment variable at apply time.
 
 ### 5. `.gitignore`
-- Add `infra/terraform.tfvars` to prevent secrets from being committed.
-- Add `infra/*.tfvars` (catch-all) and `infra/.terraform/` if not already present.
+- Already covers `terraform.tfvars` (any subdirectory), `infra/.terraform/`, and `infra/terraform.tfstate*`. No changes needed.
 
 ### 6. `infra/terraform.tfvars.example` (new file)
 - Document required variables with placeholder values so future contributors know what to set.
