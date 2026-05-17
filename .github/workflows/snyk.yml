@@ -21,21 +21,19 @@ jobs:
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
 
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
       - name: Snyk test
-        uses: snyk/actions/python@master
+        run: snyk test --severity-threshold=high --file=backend/requirements.txt
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high --file=backend/requirements.txt
 
       - name: Snyk monitor
         if: github.ref == 'refs/heads/main'
-        uses: snyk/actions/python@master
+        run: snyk monitor --file=backend/requirements.txt
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: monitor
-          args: --file=backend/requirements.txt
 
   snyk-frontend:
     name: Node dependencies
@@ -43,18 +41,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install dependencies
+        run: npm install --prefix frontend
+
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
       - name: Snyk test
-        uses: snyk/actions/node@master
+        run: snyk test --severity-threshold=high --file=frontend/package.json
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          args: --severity-threshold=high --file=frontend/package.json
 
       - name: Snyk monitor
         if: github.ref == 'refs/heads/main'
-        uses: snyk/actions/node@master
+        run: snyk monitor --file=frontend/package.json
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: monitor
-          args: --file=frontend/package.json
