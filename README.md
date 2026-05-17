@@ -6,6 +6,14 @@ Ships with a pre-loaded **Toronto Subway Analyst** workflow that queries a histo
 
 ---
 
+## Live Demo
+
+A deployed instance is running on Kubernetes (AWS EKS, ap-southeast-1):
+
+**http://k8s-silver-6b683b92d9-1239362071.ap-southeast-1.elb.amazonaws.com/**
+
+---
+
 ## Quick Start
 
 ### Prerequisites
